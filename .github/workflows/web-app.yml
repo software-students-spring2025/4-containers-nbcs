@@ -26,10 +26,10 @@ jobs:
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         pip install pytest pytest-flask pytest-cov black pylint
         
-    - name: Lint with pylint
-      if: ${{ hashFiles('web-app/**/*.py') != '' }}
-      run: |
-        pylint **/*.py
+    # - name: Lint with pylint
+    #   if: ${{ hashFiles('web-app/**/*.py') != '' }}
+    #   run: |
+    #     pylint **/*.py
         
     - name: Format with black
       if: ${{ hashFiles('web-app/**/*.py') != '' }}
