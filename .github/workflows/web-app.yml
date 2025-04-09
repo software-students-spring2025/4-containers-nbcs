@@ -1,0 +1,48 @@
+name: Web App CI
+
+on:
+  pull_request:
+    paths:
+      - 'web-app/**'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./web-app
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      if: ${{ hashFiles('web-app/**/*.py') != '' }}
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        pip install pytest pytest-flask pytest-cov black pylint
+        
+    - name: Lint with pylint
+      if: ${{ hashFiles('web-app/**/*.py') != '' }}
+      run: |
+        pylint **/*.py
+        
+    - name: Format with black
+      if: ${{ hashFiles('web-app/**/*.py') != '' }}
+      run: |
+        black --diff --check .
+        
+    - name: Test with pytest
+      run: |
+        pytest --cov=. --cov-report=xml
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./web-app/coverage.xml
+        flags: web-app
+        name: web-app-codecov
