@@ -48,6 +48,12 @@ The default environment variables should work for most development environments.
 docker-compose up -d --build
 ```
 
+if your docker-compose version is 2.0 or above and cannot use `docker-compose` command, you can use the following command instead:
+
+```bash
+docker compose up -d --build
+```
+
 *The first build might take some time because the ML client container needs to download the Vosk speech recognition model.
 
 ### 4. Access the Application
