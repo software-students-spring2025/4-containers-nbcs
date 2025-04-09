@@ -1,0 +1,95 @@
+<!-- web-app/templates/recordings.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Recordings</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .recording {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+        }
+        .recording h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .transcription {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        audio {
+            width: 100%;
+            margin: 10px 0;
+        }
+        a {
+            color: #4CAF50;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .back-button {
+            display: inline-block;
+            margin-bottom: 20px;
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            text-decoration: none;
+        }
+        .back-button:hover {
+            background-color: #45a049;
+        }
+        .no-recordings {
+            margin: 30px 0;
+            padding: 20px;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+            text-align: center;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <a href="/" class="back-button">Back to Recorder</a>
+    <h1>Meeting Recordings</h1>
+    
+    {% if recordings %}
+        {% for recording in recordings %}
+            <div class="recording">
+                <h2>{{ recording.meeting_name }}</h2>
+                <p>Recorded on: {{ recording.created_at }}</p>
+                
+                <audio controls>
+                    <source src="data:audio/webm;base64,{{ recording.audio_data }}" type="audio/webm">
+                    Your browser does not support the audio element.
+                </audio>
+                
+                <div class="transcription">
+                    <h3>Transcription:</h3>
+                    <p>{{ recording.transcription }}</p>
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <div class="no-recordings">
+            <p>No recordings found. Start by recording a meeting on the main page.</p>
+        </div>
+    {% endif %}
+</body>
+</html>
