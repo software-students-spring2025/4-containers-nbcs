@@ -1,9 +1,11 @@
 # machine-learning-client/client.py
+
 import os
 import time
 import json
 import base64
 import io
+import wave
 import logging
 import subprocess
 import tempfile
@@ -16,21 +18,28 @@ from bson.objectid import ObjectId
 from dotenv import load_dotenv
 import wave
 
-# Set up logging
+# 设置日志
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
+# 禁用 vosk 内部日志（可选）
+SetLogLevel(0)
+
+# 读取环境变量
 load_dotenv()
 
 
 class AudioTranscriber:
-    """Class to handle audio transcription using Vosk."""
+    """使用 Vosk 来转写 WAV 音频的类。"""
 
     def __init__(self, model_path: str = "/app/models/vosk-model-small-en-us-0.15"):
-        """Initialize the transcriber with a Vosk model."""
+        """
+        初始化转写器，加载 Vosk 模型。
+        model_path: Vosk 模型所在目录
+        """
         logger.info(f"Loading Vosk model from {model_path}")
         self.model = Model(model_path)
         logger.info("Vosk model loaded successfully")
@@ -89,7 +98,8 @@ class AudioTranscriber:
 
     def transcribe_audio(self, audio_data: bytes) -> str:
         """
-        Transcribe audio data using Vosk.
+        转写传入的 audio_data（假设是 WAV 格式，mono, 16-bit PCM）。
+        会先将二进制写入 /tmp/debug.wav，然后用 wave 模块按块读取并进行识别。
 
         Args:
             audio_data: Binary audio data in webm format or base64 encoded string
@@ -97,6 +107,7 @@ class AudioTranscriber:
         Returns:
             Transcribed text
         """
+
         try:
             temp_wav_path = None
 
@@ -205,37 +216,37 @@ def process_recordings():
 
     while True:
         try:
-            # Get pending recordings
+            # 查找数据库里 status 为 "pending" 的录音
             pending_recordings = mongodb_client.get_pending_recordings()
 
             for recording in pending_recordings:
                 recording_id = str(recording["_id"])
                 logger.info(f"Processing recording {recording_id}")
 
-                # Update status to processing
+                # 把状态改为 processing
                 mongodb_client.update_recording_status(recording_id, "processing")
 
-                # Get audio data
-                audio_data = recording.get("audio_data", "")
+                # 取出 audio_data（应保证是 WAV 格式 mono PCM）
+                audio_data = recording.get("audio_data", b"")
 
-                # Transcribe audio
+                # 调用转写
                 transcription = transcriber.transcribe_audio(audio_data)
 
-                # Save transcription
+                # 将结果保存回数据库
                 mongodb_client.save_transcription(recording_id, transcription)
 
                 logger.info(f"Completed transcription for recording {recording_id}")
 
-            # Sleep before checking for new recordings
+            # 每隔 5 秒查一次
             time.sleep(5)
 
         except Exception as e:
             logger.error(f"Error processing recordings: {str(e)}")
-            time.sleep(10)  # Sleep longer if there was an error
+            time.sleep(10)  # 如果出错就稍微等待再继续
 
 
 if __name__ == "__main__":
-    # Wait a bit for MongoDB to start up
+    # 等待 MongoDB 服务起来
     logger.info("Waiting for services to start...")
     time.sleep(10)
 
