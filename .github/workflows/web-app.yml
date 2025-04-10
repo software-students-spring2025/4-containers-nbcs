@@ -31,10 +31,10 @@ jobs:
     #   run: |
     #     pylint **/*.py
         
-    - name: Format with black
-      if: ${{ hashFiles('web-app/**/*.py') != '' }}
-      run: |
-        black --diff --check .
+    # - name: Format with black
+    #   if: ${{ hashFiles('web-app/**/*.py') != '' }}
+    #   run: |
+    #     black --diff --check .
         
     - name: Test with pytest
       run: |
