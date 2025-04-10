@@ -8,7 +8,7 @@ import os
 # Add the parent directory to the path so we can import the client module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from client import AudioTranscriber, MongoDBClient
+from client import AudioTranscriber, MongoDBClient, process_recordings
 
 
 class TestAudioTranscriber(unittest.TestCase):
@@ -95,6 +95,47 @@ class TestMongoDBClient(unittest.TestCase):
         mock_db.recordings.update_one.assert_called_once_with(
             {"_id": "test_id"},
             {"$set": {"transcription": "test transcription", "status": "completed"}},
+        )
+
+
+class TestProcessRecordings(unittest.TestCase):
+    @patch("client.MongoDBClient")
+    @patch("client.AudioTranscriber")
+    @patch("client.time.sleep", return_value=None)
+    def test_process_recordings_single_run(
+        self, mock_sleep, mock_transcriber_class, mock_mongo_class
+    ):
+        fake_recording = {
+            "_id": "507f1f77bcf86cd799439011",
+            "audio_data": "ZmFrZSBhdWRpbw==",  # base64 of "fake audio"
+            "status": "pending",
+        }
+
+        # mock MongoDB client
+        mock_mongo = MagicMock()
+        mock_mongo.get_pending_recordings.side_effect = [
+            [fake_recording],
+            KeyboardInterrupt(),
+        ]
+        mock_mongo_class.return_value = mock_mongo
+
+        # mock Transcriber
+        mock_transcriber = MagicMock()
+        mock_transcriber.transcribe_audio.return_value = "transcribed text"
+        mock_transcriber_class.return_value = mock_transcriber
+
+        try:
+            process_recordings()
+        except KeyboardInterrupt:  # Only Try Once
+            pass
+
+        mock_mongo.get_pending_recordings.assert_called()
+        mock_mongo.update_recording_status.assert_called_with(
+            "507f1f77bcf86cd799439011", "processing"
+        )
+        mock_transcriber.transcribe_audio.assert_called_once()
+        mock_mongo.save_transcription.assert_called_with(
+            "507f1f77bcf86cd799439011", "transcribed text"
         )
 
 
