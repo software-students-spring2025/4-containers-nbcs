@@ -2,7 +2,7 @@ FROM python:3.10
 
 WORKDIR /app
 
-# Install necessary dependencies including build essentials and C++ toolchain
+# Install necessary dependencies including build essentials and toolchain
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     libatomic1 \
@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     python3-dev \
+    ffmpeg \  
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
