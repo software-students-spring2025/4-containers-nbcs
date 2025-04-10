@@ -19,8 +19,7 @@ from dotenv import load_dotenv
 import wave
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -227,7 +226,6 @@ def process_recordings():
         except Exception as e:
             logger.error(f"Error processing recordings: {str(e)}")
             time.sleep(10)
-
 
 
 if __name__ == "__main__":
