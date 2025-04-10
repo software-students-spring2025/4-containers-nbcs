@@ -19,8 +19,7 @@ from dotenv import load_dotenv
 import wave
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -30,9 +29,12 @@ load_dotenv()
 
 
 class AudioTranscriber:
+    """Class to handle audio transcription using Vosk."""
 
     def __init__(self, model_path: str = None):
-        model_path = os.getenv("VOSK_MODEL_PATH", "/app/models/vosk-model-small-en-us-0.15")
+        model_path = os.getenv(
+            "VOSK_MODEL_PATH", "/app/models/vosk-model-small-en-us-0.15"
+        )
         logger.info(f"Loading Vosk model from {model_path}")
         self.model = Model(model_path)
         logger.info("Vosk model loaded successfully")
@@ -226,7 +228,7 @@ def process_recordings():
 
         except Exception as e:
             logger.error(f"Error processing recordings: {str(e)}")
-            time.sleep(10) 
+            time.sleep(10)
 
 
 if __name__ == "__main__":
