@@ -97,20 +97,26 @@ class TestMongoDBClient(unittest.TestCase):
             {"$set": {"transcription": "test transcription", "status": "completed"}},
         )
 
+
 class TestProcessRecordings(unittest.TestCase):
     @patch("client.MongoDBClient")
     @patch("client.AudioTranscriber")
-    @patch("client.time.sleep", return_value=None) 
-    def test_process_recordings_single_run(self, mock_sleep, mock_transcriber_class, mock_mongo_class):
+    @patch("client.time.sleep", return_value=None)
+    def test_process_recordings_single_run(
+        self, mock_sleep, mock_transcriber_class, mock_mongo_class
+    ):
         fake_recording = {
             "_id": "507f1f77bcf86cd799439011",
             "audio_data": "ZmFrZSBhdWRpbw==",  # base64 of "fake audio"
-            "status": "pending"
+            "status": "pending",
         }
 
         # mock MongoDB client
         mock_mongo = MagicMock()
-        mock_mongo.get_pending_recordings.side_effect = [[fake_recording], KeyboardInterrupt()]
+        mock_mongo.get_pending_recordings.side_effect = [
+            [fake_recording],
+            KeyboardInterrupt(),
+        ]
         mock_mongo_class.return_value = mock_mongo
 
         # mock Transcriber
@@ -120,13 +126,18 @@ class TestProcessRecordings(unittest.TestCase):
 
         try:
             process_recordings()
-        except KeyboardInterrupt: # Only Try Once
+        except KeyboardInterrupt:  # Only Try Once
             pass
 
         mock_mongo.get_pending_recordings.assert_called()
-        mock_mongo.update_recording_status.assert_called_with("507f1f77bcf86cd799439011", "processing")
+        mock_mongo.update_recording_status.assert_called_with(
+            "507f1f77bcf86cd799439011", "processing"
+        )
         mock_transcriber.transcribe_audio.assert_called_once()
-        mock_mongo.save_transcription.assert_called_with("507f1f77bcf86cd799439011", "transcribed text")
+        mock_mongo.save_transcription.assert_called_with(
+            "507f1f77bcf86cd799439011", "transcribed text"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
