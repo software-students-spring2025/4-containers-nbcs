@@ -1,7 +1,7 @@
 # web-app/app.py
 import os
 import base64
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
@@ -89,7 +89,7 @@ def delete_recording(recording_id):
     result = db.recordings.delete_one({"_id": ObjectId(recording_id)})
 
     if result.deleted_count == 1:
-        return jsonify({"success": True})
+        return redirect(url_for('recordings'))
     else:
         return jsonify({"error": "Recording not found"}), 404
 
