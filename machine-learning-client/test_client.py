@@ -12,7 +12,6 @@ from client import AudioTranscriber, MongoDBClient, process_recordings
 
 
 class TestAudioTranscriber(unittest.TestCase):
-
     @patch("client.subprocess.run")
     @patch("client.wave.open")
     @patch("client.open", create=True)
