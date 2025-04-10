@@ -1,9 +1,11 @@
 # machine-learning-client/client.py
+
 import os
 import time
 import json
 import base64
 import io
+import wave
 import logging
 import subprocess
 import tempfile
@@ -16,20 +18,20 @@ from bson.objectid import ObjectId
 from dotenv import load_dotenv
 import wave
 
-# Set up logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
+SetLogLevel(0)
+
 load_dotenv()
 
 
 class AudioTranscriber:
     """Class to handle audio transcription using Vosk."""
     def __init__(self, model_path: str = "/app/models/vosk-model-small-en-us-0.15"):
-        """Initialize the transcriber with a Vosk model."""
         logger.info(f"Loading Vosk model from {model_path}")
         self.model = Model(model_path)
         logger.info("Vosk model loaded successfully")
@@ -88,14 +90,13 @@ class AudioTranscriber:
 
     def transcribe_audio(self, audio_data: bytes) -> str:
         """
-        Transcribe audio data using Vosk.
-
         Args:
             audio_data: Binary audio data in webm format or base64 encoded string
 
         Returns:
             Transcribed text
         """
+
         try:
             temp_wav_path = None
 
@@ -204,28 +205,22 @@ def process_recordings():
 
     while True:
         try:
-            # Get pending recordings
             pending_recordings = mongodb_client.get_pending_recordings()
 
             for recording in pending_recordings:
                 recording_id = str(recording["_id"])
                 logger.info(f"Processing recording {recording_id}")
 
-                # Update status to processing
                 mongodb_client.update_recording_status(recording_id, "processing")
 
-                # Get audio data
-                audio_data = recording.get("audio_data", "")
+                audio_data = recording.get("audio_data", b"")
 
-                # Transcribe audio
                 transcription = transcriber.transcribe_audio(audio_data)
 
-                # Save transcription
                 mongodb_client.save_transcription(recording_id, transcription)
 
                 logger.info(f"Completed transcription for recording {recording_id}")
 
-            # Sleep before checking for new recordings
             time.sleep(5)
 
         except Exception as e:
@@ -233,8 +228,8 @@ def process_recordings():
             time.sleep(10)
 
 
+
 if __name__ == "__main__":
-    # Wait a bit for MongoDB to start up
     logger.info("Waiting for services to start...")
     time.sleep(10)
 

@@ -86,6 +86,12 @@ If you prefer to run containers individually during development:
 docker run --name mongodb -d -p 27017:27017 mongo
 ```
 
+#### MongoDB through Docker
+
+```bash
+docker exec -it mongodb mongosh
+```
+
 #### Web App
 
 ```bash
