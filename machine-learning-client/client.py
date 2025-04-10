@@ -7,12 +7,16 @@ import base64
 import io
 import wave
 import logging
-from typing import Optional
-
+import subprocess
+import tempfile
+from typing import Dict, Optional
+import soundfile as sf
+import numpy as np
 from vosk import Model, KaldiRecognizer, SetLogLevel
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
+import wave
 
 # 设置日志
 logging.basicConfig(
@@ -39,72 +43,132 @@ class AudioTranscriber:
         logger.info(f"Loading Vosk model from {model_path}")
         self.model = Model(model_path)
         logger.info("Vosk model loaded successfully")
+        # Disable Vosk debug logs
+        SetLogLevel(0)
+
+    def _convert_webm_to_wav(self, webm_data: bytes) -> str:
+        """
+        Convert webm audio data to wav format using ffmpeg.
+        
+        Args:
+            webm_data: Binary webm audio data
+            
+        Returns:
+            Path to the temporary wav file
+        """
+        try:
+            # Create temporary files
+            with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as webm_file:
+                webm_path = webm_file.name
+                webm_file.write(webm_data)
+            
+            wav_path = webm_path.replace('.webm', '.wav')
+            
+            # Use ffmpeg to convert webm to wav
+            command = [
+                'ffmpeg',
+                '-i', webm_path,
+                '-ar', '16000',  # Sample rate 16kHz
+                '-ac', '1',      # Mono
+                '-f', 'wav',     # Format
+                wav_path
+            ]
+            
+            process = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            # Check if conversion was successful
+            if process.returncode != 0:
+                logger.error(f"FFmpeg conversion error: {process.stderr.decode()}")
+                raise Exception("Failed to convert webm to wav")
+            
+            # Remove the temporary webm file
+            os.unlink(webm_path)
+            
+            return wav_path
+            
+        except Exception as e:
+            logger.error(f"Error converting webm to wav: {str(e)}")
+            raise e
 
     def transcribe_audio(self, audio_data: bytes) -> str:
         """
         转写传入的 audio_data（假设是 WAV 格式，mono, 16-bit PCM）。
         会先将二进制写入 /tmp/debug.wav，然后用 wave 模块按块读取并进行识别。
 
-        如果音频格式不符合要求，将返回错误信息字符串。
+        Args:
+            audio_data: Binary audio data in webm format or base64 encoded string
+
+        Returns:
+            Transcribed text
         """
 
         try:
-            # 如果传入的是 base64 字符串，则先解码
+            temp_wav_path = None
+            
+            # Convert base64 to bytes if needed
             if isinstance(audio_data, str):
                 audio_data = base64.b64decode(audio_data)
-                logger.info(f"Decoded base64 audio data: {len(audio_data)} bytes")
-
-            # 将音频写到 debug WAV（如果不是 WAV 格式 mono PCM，则后面会检查出错）
-            debug_filepath = "/tmp/debug.wav"
-            with open(debug_filepath, "wb") as f:
-                f.write(audio_data)
-            logger.info(f"Saved debug WAV to {debug_filepath}")
-
-            # 用 wave.open 打开文件
-            wf = wave.open(debug_filepath, "rb")
-
-            # 检查 WAV 是否为单声道、16-bit PCM
-            if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
-                err_msg = "Audio file must be WAV format mono PCM (16-bit)."
-                logger.error(err_msg)
-                wf.close()
-                return err_msg
-
-            # 初始化识别器
-            rec = KaldiRecognizer(self.model, wf.getframerate())
+            
+            # Convert webm to wav
+            temp_wav_path = self._convert_webm_to_wav(audio_data)
+            
+            # Open the converted wav file
+            wf = open(temp_wav_path, "rb")
+            
+            # Create a wave object
+            wav_file = wave.open(temp_wav_path, "rb")
+            
+            # Check if the wav file is mono PCM
+            if wav_file.getnchannels() != 1 or wav_file.getsampwidth() != 2 or wav_file.getcomptype() != "NONE":
+                logger.error("Audio file must be WAV format mono PCM.")
+                return "Error: Audio file must be mono PCM."
+            
+            # Create recognizer with the model
+            rec = KaldiRecognizer(self.model, wav_file.getframerate())
             rec.SetWords(True)
-
-            partial_transcripts = []
-            final_transcript = ""
-
-            # 逐段读取音频并识别
+            rec.SetPartialWords(True)
+            
+            results = []
+            
+            # Process in chunks
             while True:
-                data = wf.readframes(4000)
+                data = wav_file.readframes(4000)
                 if len(data) == 0:
                     break
-
+                
                 if rec.AcceptWaveform(data):
-                    # 中间输出完整识别结果
-                    text = json.loads(rec.Result()).get("text", "")
-                    if text:
-                        partial_transcripts.append(text)
-                        logger.debug(f"✅ Interim result: {text}")
-                else:
-                    # 仅在调试级别输出 partial
-                    partial_text = json.loads(rec.PartialResult()).get("partial", "")
-                    logger.debug(f"⏳ Partial: {partial_text}")
-
-            wf.close()
-
-            # 打印并获取最终识别结果
-            final_text = json.loads(rec.FinalResult()).get("text", "")
-            final_transcript = " ".join([*partial_transcripts, final_text]).strip()
-            logger.info(f"🟢 Final transcription: {final_transcript}")
-
-            return final_transcript
+                    part_result = json.loads(rec.Result())
+                    if "text" in part_result and part_result["text"]:
+                        results.append(part_result["text"])
+            
+            # Get the final result
+            final_result = json.loads(rec.FinalResult())
+            if "text" in final_result and final_result["text"]:
+                results.append(final_result["text"])
+            
+            # Close files
+            wav_file.close()
+            
+            # Clean up temporary file
+            if temp_wav_path and os.path.exists(temp_wav_path):
+                os.unlink(temp_wav_path)
+            
+            return " ".join(results)
 
         except Exception as e:
             logger.error(f"Error transcribing audio: {str(e)}")
+            
+            # Clean up temporary file on error
+            if temp_wav_path and os.path.exists(temp_wav_path):
+                try:
+                    os.unlink(temp_wav_path)
+                except:
+                    pass
+                
             return f"Error transcribing audio: {str(e)}"
 
 
@@ -180,5 +244,5 @@ if __name__ == "__main__":
     logger.info("Waiting for services to start...")
     time.sleep(10)
 
-    # 启动录音处理
+    # Start processing recordings
     process_recordings()
