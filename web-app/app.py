@@ -20,6 +20,7 @@ def get_db():
 
 # Function to get current time with timezone offset
 def get_local_time():
+    """Get the current local time with timezone offset."""
     # Adjust the offset based on your timezone (UTC-4 in this case)
     timezone_offset = -4  # 4 hours behind UTC
     local_time = datetime.now() + timedelta(hours=timezone_offset)
