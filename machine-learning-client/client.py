@@ -1,25 +1,30 @@
 # machine-learning-client/client.py
+
 import os
 import time
 import json
 import base64
 import io
 import logging
-from typing import Dict, Optional
+from typing import Optional
+
 import soundfile as sf
 import numpy as np
 from vosk import Model, KaldiRecognizer
+
+from pydub import AudioSegment  # 用于自动探测并解析音频
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
 
-# Set up logging
+# 设置日志
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# Load environment variables
+# 读取环境变量
 load_dotenv()
 
 
@@ -27,58 +32,88 @@ class AudioTranscriber:
     """Class to handle audio transcription using Vosk."""
 
     def __init__(self, model_path: str = "/app/models/vosk-model-small-en-us-0.15"):
-        """Initialize the transcriber with a Vosk model."""
+        """
+        Initialize the transcriber with a Vosk model.
+        model_path: Vosk 模型所在目录（默认英文 small 模型）
+        """
         logger.info(f"Loading Vosk model from {model_path}")
         self.model = Model(model_path)
         logger.info("Vosk model loaded successfully")
 
     def transcribe_audio(self, audio_data: bytes) -> str:
         """
-        Transcribe audio data using Vosk.
+        Transcribe audio data using Vosk, while saving the final WAV to /tmp/debug.wav.
 
         Args:
-            audio_data: Binary audio data
+            audio_data: Binary audio data (e.g. WAV, MP3, M4A, OGG, etc.),
+                        base64-encoded if it's a string.
 
         Returns:
-            Transcribed text
+            Transcribed text or error message (string)
         """
         try:
-            # Convert base64 to bytes if needed
+            # 1. 如果传入的是 base64 字符串，则先解码
             if isinstance(audio_data, str):
                 audio_data = base64.b64decode(audio_data)
+                logger.info(f"Decoded base64 audio data: {len(audio_data)} bytes")
 
-            # Load audio data using soundfile
-            with io.BytesIO(audio_data) as audio_file:
-                data, sample_rate = sf.read(audio_file)
+            # 2. 用 pydub 自动探测格式并生成 AudioSegment
+            audio_segment = AudioSegment.from_file(io.BytesIO(audio_data))
 
-                if data.ndim > 1:
-                    data = data[:, 0]  # Use only the first channel if stereo
+            # 3. 重采样到 16kHz
+            audio_segment = audio_segment.set_frame_rate(16000)
 
-                # Make sure data is float32 for Vosk
-                if data.dtype != np.float32:
-                    data = data.astype(np.float32)
+            # 4. 导出为 WAV 到内存
+            wav_buffer = io.BytesIO()
+            audio_segment.export(wav_buffer, format="wav")
+            wav_buffer.seek(0)
 
-            # Create recognizer with the model
+            # ==== 关键：将内存中的 WAV 落地到容器内 /tmp/debug.wav 供调试 ====
+            debug_filepath = "/tmp/debug.wav"
+            with open(debug_filepath, "wb") as f:
+                f.write(wav_buffer.getbuffer())
+            logger.info(f"Saved debug WAV to {debug_filepath}")
+
+            # 5. 现在再把指针重置，读取数据给 soundfile
+            wav_buffer.seek(0)
+            data, sample_rate = sf.read(wav_buffer)
+
+            # 如果是立体声，取第一个声道
+            if data.ndim > 1:
+                data = data[:, 0]
+
+            # 转为 float32（Vosk 可以处理）
+            if data.dtype != np.float32:
+                data = data.astype(np.float32)
+
+            # 初始化 KaldiRecognizer
             rec = KaldiRecognizer(self.model, sample_rate)
             rec.SetWords(True)
 
-            # Process in chunks to avoid memory issues
-            chunk_size = int(sample_rate * 0.2)  # 200ms chunks
+            chunk_size = int(sample_rate * 1.0)  # 200ms
             results = []
 
             for i in range(0, len(data), chunk_size):
                 chunk = data[i : i + chunk_size]
-                if rec.AcceptWaveform(chunk):
+                chunk_bytes = chunk.tobytes()
+
+                if rec.AcceptWaveform(chunk_bytes):
                     part_result = json.loads(rec.Result())
                     if "text" in part_result and part_result["text"]:
                         results.append(part_result["text"])
+                else:
+                    # 打印一下部分识别
+                    partial = json.loads(rec.PartialResult())
+                    logger.debug(f"Partial: {partial}")
 
-            # Get the final result
+            # 获取最终结果
             final_result = json.loads(rec.FinalResult())
             if "text" in final_result and final_result["text"]:
                 results.append(final_result["text"])
 
-            return " ".join(results)
+            transcript_str = " ".join(results)
+            logger.info(f"Transcription result: '{transcript_str}'")
+            return transcript_str
 
         except Exception as e:
             logger.error(f"Error transcribing audio: {str(e)}")
@@ -123,39 +158,39 @@ def process_recordings():
 
     while True:
         try:
-            # Get pending recordings
+            # 查找数据库里 status 为 "pending" 的录音
             pending_recordings = mongodb_client.get_pending_recordings()
 
             for recording in pending_recordings:
                 recording_id = str(recording["_id"])
                 logger.info(f"Processing recording {recording_id}")
 
-                # Update status to processing
+                # 把状态改为 processing
                 mongodb_client.update_recording_status(recording_id, "processing")
 
-                # Get audio data
+                # 取出 audio_data
                 audio_data = recording.get("audio_data", "")
 
-                # Transcribe audio
+                # 调用转写（会在 /tmp/debug.wav 保存调试文件）
                 transcription = transcriber.transcribe_audio(audio_data)
 
-                # Save transcription
+                # 将结果保存回数据库
                 mongodb_client.save_transcription(recording_id, transcription)
 
                 logger.info(f"Completed transcription for recording {recording_id}")
 
-            # Sleep before checking for new recordings
+            # 每隔 5 秒查一次
             time.sleep(5)
 
         except Exception as e:
             logger.error(f"Error processing recordings: {str(e)}")
-            time.sleep(10)  # Sleep longer if there was an error
+            time.sleep(10)  # 如果出错就稍微等待再继续
 
 
 if __name__ == "__main__":
-    # Wait a bit for MongoDB to start up
+    # 等待 MongoDB 服务起来
     logger.info("Waiting for services to start...")
     time.sleep(10)
 
-    # Start processing recordings
+    # 启动录音处理
     process_recordings()
