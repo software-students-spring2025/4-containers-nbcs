@@ -5,18 +5,26 @@ from flask import Flask, render_template, request, jsonify
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
 load_dotenv()
 
 app = Flask(__name__)
 
 
-# MongoDB connection
 def get_db():
     mongo_uri = os.getenv("MONGO_URI", "mongodb://mongodb:27017/")
     client = MongoClient(mongo_uri)
     db = client.meeting_minutes
     return db
+
+
+# Function to get current time with timezone offset
+def get_local_time():
+    # Adjust the offset based on your timezone (UTC-4 in this case)
+    timezone_offset = -4  # 4 hours behind UTC
+    local_time = datetime.now() + timedelta(hours=timezone_offset)
+    return local_time.strftime("%Y-%m-%d %H:%M:%S")
 
 
 @app.route("/")
@@ -27,8 +35,7 @@ def index():
 @app.route("/recordings")
 def recordings():
     db = get_db()
-    # Get all recordings that have transcriptions
-    recordings = list(db.recordings.find({"transcription": {"$exists": True}}))
+    recordings = list(db.recordings.find({}))
     for recording in recordings:
         recording["_id"] = str(recording["_id"])
     return render_template("recordings.html", recordings=recordings)
@@ -42,16 +49,13 @@ def save_recording():
     audio_file = request.files["audio"]
     meeting_name = request.form.get("meeting_name", "Unnamed Meeting")
 
-    # Save audio to MongoDB
     db = get_db()
     recording_id = db.recordings.insert_one(
         {
             "meeting_name": meeting_name,
             "audio_data": base64.b64encode(audio_file.read()).decode("utf-8"),
-            "status": "pending",  # pending, processing, completed
-            "created_at": str(ObjectId())[
-                :8
-            ],  # Use first 8 chars of ObjectId as timestamp
+            "status": "pending",
+            "created_at": get_local_time(),
         }
     ).inserted_id
 
@@ -66,7 +70,6 @@ def get_transcription(recording_id):
     if not recording:
         return jsonify({"error": "Recording not found"}), 404
 
-    # Check if transcription exists
     if "transcription" in recording:
         return jsonify(
             {
@@ -77,6 +80,34 @@ def get_transcription(recording_id):
         )
     else:
         return jsonify({"success": True, "status": recording.get("status", "pending")})
+
+
+@app.route("/delete_recording/<recording_id>", methods=["POST"])
+def delete_recording(recording_id):
+    """delete a recording"""
+    db = get_db()
+    result = db.recordings.delete_one({"_id": ObjectId(recording_id)})
+
+    if result.deleted_count == 1:
+        return jsonify({"success": True})
+    else:
+        return jsonify({"error": "Recording not found"}), 404
+
+
+@app.route("/update_recording_name/<recording_id>", methods=["POST"])
+def update_recording_name(recording_id):
+    """update a recording name"""
+    new_name = request.form.get("new_meeting_name", "").strip()
+    db = get_db()
+
+    result = db.recordings.update_one(
+        {"_id": ObjectId(recording_id)}, {"$set": {"meeting_name": new_name}}
+    )
+
+    if result.modified_count == 1:
+        return jsonify({"success": True})
+    else:
+        return jsonify({"error": "Recording not found or no change"}), 404
 
 
 if __name__ == "__main__":

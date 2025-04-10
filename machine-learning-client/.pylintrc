@@ -1,0 +1,33 @@
+[MASTER]
+ignore=venv,migrations,__pycache__
+fail-under=7.5
+jobs=1
+
+[MESSAGES CONTROL]
+disable=
+    C0114,  # missing module docstring
+    C0115,  # missing class docstring
+    C0116,  # missing function or method docstring
+    R0903,  # too few public methods (e.g., simple Flask views)
+    W0613,  # unused argument (common in route handlers like def foo(id):)
+    W0621,  # redefined outer name
+    W1203,  # logging - prefer lazy formatting
+    W0611,  # unused import (use autoflake to clean instead)
+    C0411,  # standard import order
+    C0412,  # ungrouped imports
+    C0413,  # import not at top of file
+
+[FORMAT]
+max-line-length=100
+indent-string='    '
+
+[REPORTS]
+output-format=colorized
+reports=no
+score=yes
+
+[LOGGING]
+logging-modules=logging
+
+[VARIABLES]
+dummy-variables-rgx=_|dummy|unused

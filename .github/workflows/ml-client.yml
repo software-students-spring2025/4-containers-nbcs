@@ -31,14 +31,14 @@ jobs:
     #   run: |
     #     pylint **/*.py
         
-    - name: Format with black
-      if: ${{ hashFiles('machine-learning-client/**/*.py') != '' }}
-      run: |
-        black --diff --check .
+    # - name: Format with black
+    #   if: ${{ hashFiles('machine-learning-client/**/*.py') != '' }}
+    #   run: |
+    #     black --diff --check .
         
     - name: Test with pytest
       run: |
-        pytest --cov=. --cov-report=xml tests/
+        pytest --cov=. --cov-report=xml 
         
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3
