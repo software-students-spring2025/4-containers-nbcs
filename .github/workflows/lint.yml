@@ -1,5 +1,5 @@
 name: lint-free
-# on: [push, pull_request]
+on: [push, pull_request]
 
 jobs:
   lint-and-format:
