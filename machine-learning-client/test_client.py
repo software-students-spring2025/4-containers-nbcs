@@ -12,34 +12,79 @@ from client import AudioTranscriber, MongoDBClient, process_recordings
 
 
 class TestAudioTranscriber(unittest.TestCase):
+
+    @patch("client.subprocess.run")
+    @patch("client.wave.open")
+    @patch("client.open", create=True)
     @patch("client.Model")
-    @patch("client.KaldiRecognizer")
-    @patch("client.sf")
-    def test_transcribe_audio(self, mock_sf, mock_recognizer, mock_model):
-        # Set up mock for soundfile
-        mock_sf.read.return_value = (MagicMock(), 16000)
+    def test_transcribe_audio(
+        self, mock_model_class, mock_open_builtin, mock_wave_open, mock_subprocess_run
+    ):
+        mock_subprocess_run.return_value.returncode = 0
 
-        # Set up mock for KaldiRecognizer
-        mock_rec_instance = MagicMock()
-        mock_rec_instance.AcceptWaveform.return_value = True
-        mock_rec_instance.Result.return_value = json.dumps({"text": "hello world"})
-        mock_rec_instance.FinalResult.return_value = json.dumps(
-            {"text": "final result"}
-        )
-        mock_recognizer.return_value = mock_rec_instance
+        mock_wave_file = MagicMock()
+        mock_wave_file.getnchannels.return_value = 1
+        mock_wave_file.getsampwidth.return_value = 2
+        mock_wave_file.getcomptype.return_value = "NONE"
+        mock_wave_file.getframerate.return_value = 16000
+        mock_wave_file.readframes.side_effect = [b"audio", b""]
 
-        # Create transcriber instance
+        mock_wave_open.return_value = mock_wave_file
+
+        mock_recognizer = MagicMock()
+        mock_recognizer.AcceptWaveform.return_value = True
+        mock_recognizer.Result.return_value = '{"text": "hello"}'
+        mock_recognizer.FinalResult.return_value = '{"text": "world"}'
+
+        mock_model = MagicMock()
+        mock_model_class.return_value = mock_model
+
+        with patch("client.KaldiRecognizer", return_value=mock_recognizer):
+            transcriber = AudioTranscriber(model_path="/fake/model/path")
+            result = transcriber.transcribe_audio(b"fake webm data")
+
+        self.assertEqual(result, "hello world")
+
+    # test for ffmpeg conversion
+    @patch("client.Model")
+    @patch("client.subprocess.run")
+    @patch("client.tempfile.NamedTemporaryFile")
+    def test_convert_webm_to_wav_ffmpeg_failure(
+        self, mock_tempfile, mock_run, mock_model
+    ):
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stderr.decode.return_value = "ffmpeg error"
+
+        fake_temp = MagicMock()
+        fake_temp.name = "/tmp/test.webm"
+        mock_tempfile.return_value.__enter__.return_value = fake_temp
+
         transcriber = AudioTranscriber()
 
-        # Test transcription
-        result = transcriber.transcribe_audio(b"test_audio_data")
+        with self.assertRaises(Exception) as context:
+            transcriber._convert_webm_to_wav(b"invalid webm")
 
-        # Assertions
-        # self.assertEqual(result, "hello world final result")
-        # mock_sf.read.assert_called_once()
-        # mock_rec_instance.AcceptWaveform.assert_called()
-        # mock_rec_instance.Result.assert_called()
-        # mock_rec_instance.FinalResult.assert_called_once()
+        self.assertIn("Failed to convert webm to wav", str(context.exception))
+
+    # test for wav file format
+    @patch("client.AudioTranscriber._convert_webm_to_wav", return_value="/tmp/fake.wav")
+    @patch("client.wave.open")
+    @patch("client.open", create=True)
+    @patch("client.Model")
+    def test_transcribe_audio_invalid_format(
+        self, mock_model_class, mock_open_builtin, mock_wave_open, mock_convert
+    ):
+        mock_wave_file = MagicMock()
+        mock_wave_file.getnchannels.return_value = 2
+        mock_wave_file.getsampwidth.return_value = 2
+        mock_wave_file.getcomptype.return_value = "NONE"
+        mock_wave_open.return_value = mock_wave_file
+
+        transcriber = AudioTranscriber()
+        result = transcriber.transcribe_audio(b"fake webm")
+
+        self.assertIn("Error: Audio file must be mono PCM", result)
+
 
 
 class TestMongoDBClient(unittest.TestCase):
