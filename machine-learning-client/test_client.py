@@ -86,7 +86,6 @@ class TestAudioTranscriber(unittest.TestCase):
         self.assertIn("Error: Audio file must be mono PCM", result)
 
 
-
 class TestMongoDBClient(unittest.TestCase):
     @patch("client.MongoClient")
     def test_get_pending_recordings(self, mock_mongo_client):
