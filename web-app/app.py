@@ -5,7 +5,7 @@ from flask import Flask, render_template, request, jsonify
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -18,6 +18,12 @@ def get_db():
     db = client.meeting_minutes
     return db
 
+# Function to get current time with timezone offset
+def get_local_time():
+    # Adjust the offset based on your timezone (UTC-4 in this case)
+    timezone_offset = -4  # 4 hours behind UTC
+    local_time = datetime.now() + timedelta(hours=timezone_offset)
+    return local_time.strftime("%Y-%m-%d %H:%M:%S")
 
 @app.route("/")
 def index():
@@ -47,7 +53,7 @@ def save_recording():
             "meeting_name": meeting_name,
             "audio_data": base64.b64encode(audio_file.read()).decode("utf-8"),
             "status": "pending",
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": get_local_time()
         }
     ).inserted_id
 

@@ -31,7 +31,8 @@ load_dotenv()
 class AudioTranscriber:
     """Class to handle audio transcription using Vosk."""
 
-    def __init__(self, model_path: str = "/app/models/vosk-model-small-en-us-0.15"):
+    def __init__(self, model_path: str = None):
+        model_path = os.getenv("VOSK_MODEL_PATH", "/app/models/vosk-model-small-en-us-0.15")
         logger.info(f"Loading Vosk model from {model_path}")
         self.model = Model(model_path)
         logger.info("Vosk model loaded successfully")
