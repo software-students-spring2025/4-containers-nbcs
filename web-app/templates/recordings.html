@@ -28,6 +28,10 @@
             <h3>Transcription:</h3>
             <p>{{ recording.transcription }}</p>
         </div>
+        <div class="edit-name">
+            <input type="text" class="name-input" placeholder="New Meeting Name" />
+            <button class="update-name-btn" data-id="{{ recording._id }}">Update Name</button>
+        </div>
         <form action="/delete_recording/{{ recording._id }}" method="POST" style="margin-top: 10px;">
             <button type="submit">Delete This Recording</button>
         </form>
