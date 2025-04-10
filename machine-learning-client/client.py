@@ -5,14 +5,11 @@ import time
 import json
 import base64
 import io
+import wave
 import logging
 from typing import Optional
 
-import soundfile as sf
-import numpy as np
-from vosk import Model, KaldiRecognizer
-
-from pydub import AudioSegment  # 用于自动探测并解析音频
+from vosk import Model, KaldiRecognizer, SetLogLevel
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
@@ -24,17 +21,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 禁用 vosk 内部日志（可选）
+SetLogLevel(0)
+
 # 读取环境变量
 load_dotenv()
 
 
 class AudioTranscriber:
-    """Class to handle audio transcription using Vosk."""
+    """使用 Vosk 来转写 WAV 音频的类。"""
 
     def __init__(self, model_path: str = "/app/models/vosk-model-small-en-us-0.15"):
         """
-        Initialize the transcriber with a Vosk model.
-        model_path: Vosk 模型所在目录（默认英文 small 模型）
+        初始化转写器，加载 Vosk 模型。
+        model_path: Vosk 模型所在目录
         """
         logger.info(f"Loading Vosk model from {model_path}")
         self.model = Model(model_path)
@@ -42,78 +42,66 @@ class AudioTranscriber:
 
     def transcribe_audio(self, audio_data: bytes) -> str:
         """
-        Transcribe audio data using Vosk, while saving the final WAV to /tmp/debug.wav.
+        转写传入的 audio_data（假设是 WAV 格式，mono, 16-bit PCM）。
+        会先将二进制写入 /tmp/debug.wav，然后用 wave 模块按块读取并进行识别。
 
-        Args:
-            audio_data: Binary audio data (e.g. WAV, MP3, M4A, OGG, etc.),
-                        base64-encoded if it's a string.
-
-        Returns:
-            Transcribed text or error message (string)
+        如果音频格式不符合要求，将返回错误信息字符串。
         """
+
         try:
-            # 1. 如果传入的是 base64 字符串，则先解码
+            # 如果传入的是 base64 字符串，则先解码
             if isinstance(audio_data, str):
                 audio_data = base64.b64decode(audio_data)
                 logger.info(f"Decoded base64 audio data: {len(audio_data)} bytes")
 
-            # 2. 用 pydub 自动探测格式并生成 AudioSegment
-            audio_segment = AudioSegment.from_file(io.BytesIO(audio_data))
-
-            # 3. 重采样到 16kHz
-            audio_segment = audio_segment.set_frame_rate(16000)
-
-            # 4. 导出为 WAV 到内存
-            wav_buffer = io.BytesIO()
-            audio_segment.export(wav_buffer, format="wav")
-            wav_buffer.seek(0)
-
-            # ==== 关键：将内存中的 WAV 落地到容器内 /tmp/debug.wav 供调试 ====
+            # 将音频写到 debug WAV（如果不是 WAV 格式 mono PCM，则后面会检查出错）
             debug_filepath = "/tmp/debug.wav"
             with open(debug_filepath, "wb") as f:
-                f.write(wav_buffer.getbuffer())
+                f.write(audio_data)
             logger.info(f"Saved debug WAV to {debug_filepath}")
 
-            # 5. 现在再把指针重置，读取数据给 soundfile
-            wav_buffer.seek(0)
-            data, sample_rate = sf.read(wav_buffer)
+            # 用 wave.open 打开文件
+            wf = wave.open(debug_filepath, "rb")
 
-            # 如果是立体声，取第一个声道
-            if data.ndim > 1:
-                data = data[:, 0]
+            # 检查 WAV 是否为单声道、16-bit PCM
+            if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
+                err_msg = "Audio file must be WAV format mono PCM (16-bit)."
+                logger.error(err_msg)
+                wf.close()
+                return err_msg
 
-            # 转为 float32（Vosk 可以处理）
-            if data.dtype != np.float32:
-                data = data.astype(np.float32)
-
-            # 初始化 KaldiRecognizer
-            rec = KaldiRecognizer(self.model, sample_rate)
+            # 初始化识别器
+            rec = KaldiRecognizer(self.model, wf.getframerate())
             rec.SetWords(True)
 
-            chunk_size = int(sample_rate * 1.0)  # 200ms
-            results = []
+            partial_transcripts = []
+            final_transcript = ""
 
-            for i in range(0, len(data), chunk_size):
-                chunk = data[i : i + chunk_size]
-                chunk_bytes = chunk.tobytes()
+            # 逐段读取音频并识别
+            while True:
+                data = wf.readframes(4000)
+                if len(data) == 0:
+                    break
 
-                if rec.AcceptWaveform(chunk_bytes):
-                    part_result = json.loads(rec.Result())
-                    if "text" in part_result and part_result["text"]:
-                        results.append(part_result["text"])
+                if rec.AcceptWaveform(data):
+                    # 中间输出完整识别结果
+                    text = json.loads(rec.Result()).get("text", "")
+                    if text:
+                        partial_transcripts.append(text)
+                        logger.debug(f"✅ Interim result: {text}")
                 else:
-                    # 打印一下部分识别
-                    partial = json.loads(rec.PartialResult())
-                    logger.debug(f"Partial: {partial}")
+                    # 仅在调试级别输出 partial
+                    partial_text = json.loads(rec.PartialResult()).get("partial", "")
+                    logger.debug(f"⏳ Partial: {partial_text}")
 
-            # 获取最终结果
-            final_result = json.loads(rec.FinalResult())
-            if "text" in final_result and final_result["text"]:
-                results.append(final_result["text"])
+            wf.close()
 
-            transcript_str = " ".join(results)
-            logger.info(f"Transcription result: '{transcript_str}'")
-            return transcript_str
+            # 打印并获取最终识别结果
+            final_text = json.loads(rec.FinalResult()).get("text", "")
+            final_transcript = " ".join([*partial_transcripts, final_text]).strip()
+            logger.info(f"🟢 Final transcription: {final_transcript}")
+
+            return final_transcript
 
         except Exception as e:
             logger.error(f"Error transcribing audio: {str(e)}")
@@ -168,10 +156,10 @@ def process_recordings():
                 # 把状态改为 processing
                 mongodb_client.update_recording_status(recording_id, "processing")
 
-                # 取出 audio_data
-                audio_data = recording.get("audio_data", "")
+                # 取出 audio_data（应保证是 WAV 格式 mono PCM）
+                audio_data = recording.get("audio_data", b"")
 
-                # 调用转写（会在 /tmp/debug.wav 保存调试文件）
+                # 调用转写
                 transcription = transcriber.transcribe_audio(audio_data)
 
                 # 将结果保存回数据库
