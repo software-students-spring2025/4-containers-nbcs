@@ -42,6 +42,11 @@ cp .env.example .env
 
 The default environment variables should work for most development environments.
 
+#### Available Environment Variables
+
+- `MONGO_URI`: MongoDB connection string (default: `mongodb://mongodb:27017/`)
+- `VOSK_MODEL_PATH`: Path to the Vosk speech recognition model (default: `/app/models/vosk-model-small-en-us-0.15`)
+
 ### 3. Build and Start the Containers
 
 ```bash
@@ -73,6 +78,35 @@ http://localhost:5000
 5. Wait for the transcription to process (this may take a moment)
 6. View your transcription when it appears
 7. Click "View All Recordings" to see your past transcribed meetings
+
+## Customizing Speech Recognition
+
+### Changing the Language Model
+
+The system uses Vosk for speech recognition, which supports multiple languages. You can change the language model by updating the `VOSK_MODEL_PATH` environment variable in your `.env` file:
+
+```
+# Examples for other languages:
+VOSK_MODEL_PATH=/app/models/vosk-model-small-es-0.42  # Spanish
+VOSK_MODEL_PATH=/app/models/vosk-model-small-fr-0.22  # French
+VOSK_MODEL_PATH=/app/models/vosk-model-small-de-0.15  # German
+```
+
+When changing the model, you'll need to ensure the model is downloaded into your container or mounted as a volume. You can modify the Dockerfile or docker-compose.yml to include your preferred model.
+
+### Alternative Models
+
+Vosk offers various models with different capabilities:
+
+| Model Type | Description | Use Case |
+|------------|-------------|----------|
+| Small models | Compact size (50-100MB) | Good for most transcription needs |
+| Large models | Higher accuracy (1-2GB) | When accuracy is critical |
+| Speaker identification | Can identify different speakers | For multi-person meetings |
+
+The default small English model (`vosk-model-small-en-us-0.15`) provides a good balance between accuracy and resource usage. For multi-speaker meetings, we've tested the speaker identification model (`vosk-model-spk-0.4`), but found it to be overly sensitive and always separates sentences from the same speaker incorrectly.
+
+You can find more models on the [Vosk website](https://alphacephei.com/vosk/models).
 
 ## Development
 
