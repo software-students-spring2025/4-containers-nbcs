@@ -1,5 +1,3 @@
-# machine-learning-client/client.py
-
 import os
 import time
 import json
